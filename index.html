@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>E-Signature Maker</title>
+
+  <!-- Google Fonts: handwriting / cursive styles for Type mode -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Allura&family=Caveat:wght@400;700&family=Dancing+Script:wght@400;700&family=Great+Vibes&family=Pacifico&family=Inter:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+  />
+
+  <!-- jsPDF for PDF export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <style>
+    /* ---------- Design tokens ---------- */
+    :root {
+      --bg: #f4f5f7;
+      --card: #ffffff;
+      --ink: #1a1d23;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --line-strong: #d1d5db;
+      --accent: #4f46e5;
+      --accent-soft: #eef2ff;
+      --accent-ink: #4338ca;
+      --radius: 14px;
+      --radius-sm: 9px;
+      --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 8px 24px rgba(16, 24, 40, 0.08);
+      --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.08);
+      --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      padding: 32px 16px 64px;
+      min-height: 100vh;
+    }
+
+    .wrap {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    /* ---------- Header ---------- */
+    header.app-head {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    header.app-head h1 {
+      margin: 0 0 6px;
+      font-size: 1.7rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    header.app-head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    /* ---------- Card ---------- */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    /* ---------- Tabs ---------- */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      padding: 8px;
+      background: #fafafb;
+      border-bottom: 1px solid var(--line);
+    }
+    .tab {
+      flex: 1;
+      appearance: none;
+      border: none;
+      background: transparent;
+      font-family: inherit;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--muted);
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .tab:hover { color: var(--ink); }
+    .tab.active {
+      background: var(--card);
+      color: var(--accent-ink);
+      box-shadow: var(--shadow-sm);
+    }
+
+    /* ---------- Panels ---------- */
+    .panel-body { padding: 20px; }
+    .mode { display: none; }
+    .mode.active { display: block; }
+
+    /* ---------- Signature stage / preview ---------- */
+    .stage {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 3 / 1;            /* matches 600x200 export ratio */
+      border: 1px dashed var(--line-strong);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      touch-action: none;             /* prevents scrolling while drawing on touch */
+    }
+    /* Checkerboard shows transparency; toggled off for white bg */
+    .stage.transparent {
+      background-image:
+        linear-gradient(45deg, #e9eaed 25%, transparent 25%),
+        linear-gradient(-45deg, #e9eaed 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #e9eaed 75%),
+        linear-gradient(-45deg, transparent 75%, #e9eaed 75%);
+      background-size: 18px 18px;
+      background-position: 0 0, 0 9px, 9px -9px, -9px 0;
+    }
+    .stage.white { background: #ffffff; }
+
+    #drawCanvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      cursor: crosshair;
+    }
+
+    /* Typed preview overlay (only used in Type mode) */
+    .type-preview {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 18px;
+      text-align: center;
+      pointer-events: none;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+    .type-preview span {
+      line-height: 1.1;
+      max-width: 100%;
+    }
+    .type-preview.placeholder span { color: #c4c7ce !important; }
+
+    /* ---------- Controls ---------- */
+    .controls {
+      display: grid;
+      gap: 16px;
+      margin-top: 18px;
+    }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 14px;
+    }
+    .field { display: flex; flex-direction: column; gap: 7px; }
+    .field.grow { flex: 1; min-width: 180px; }
+    label.lbl {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    /* Text input */
+    input[type="text"] {
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 10px 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-sm);
+      background: #fff;
+      color: var(--ink);
+      width: 100%;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    input[type="text"]:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    /* Color swatches */
+    .swatches { display: flex; gap: 8px; }
+    .swatch {
+      width: 30px; height: 30px;
+      border-radius: 50%;
+      border: 2px solid #fff;
+      box-shadow: 0 0 0 1px var(--line-strong);
+      cursor: pointer;
+      padding: 0;
+      transition: transform 0.12s ease, box-shadow 0.12s ease;
+    }
+    .swatch:hover { transform: scale(1.08); }
+    .swatch.active {
+      box-shadow: 0 0 0 2px var(--accent);
+      transform: scale(1.08);
+    }
+
+    /* Sliders */
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--line);
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 2px solid #fff;
+      box-shadow: var(--shadow-sm);
+      cursor: pointer;
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 2px solid #fff;
+      box-shadow: var(--shadow-sm);
+      cursor: pointer;
+    }
+    .slider-val {
+      font-size: 0.82rem;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Font select grid */
+    .font-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 8px;
+    }
+    .font-opt {
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-sm);
+      background: #fff;
+      padding: 8px 6px;
+      cursor: pointer;
+      font-size: 1.35rem;
+      line-height: 1;
+      color: var(--ink);
+      text-align: center;
+      transition: border-color 0.15s ease, background 0.15s ease;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+    .font-opt small {
+      display: block;
+      font-family: var(--font);
+      font-size: 0.65rem;
+      color: var(--muted);
+      margin-top: 4px;
+      letter-spacing: 0.02em;
+    }
+    .font-opt:hover { border-color: var(--accent); }
+    .font-opt.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    /* ---------- Toggle (background) ---------- */
+    .seg {
+      display: inline-flex;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+    }
+    .seg button {
+      appearance: none;
+      border: none;
+      background: #fff;
+      font-family: inherit;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--muted);
+      padding: 8px 14px;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .seg button + button { border-left: 1px solid var(--line-strong); }
+    .seg button.active { background: var(--accent); color: #fff; }
+
+    /* ---------- Action buttons ---------- */
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 4px;
+    }
+    .btn {
+      appearance: none;
+      font-family: inherit;
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 10px 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--line-strong);
+      background: #fff;
+      color: var(--ink);
+      cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
+    }
+    .btn:hover { background: #f9fafb; border-color: var(--muted); }
+    .btn:active { transform: translateY(1px); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn.ghost { color: var(--muted); }
+
+    /* ---------- Export bar ---------- */
+    .export {
+      margin-top: 22px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+    }
+    .export h3 {
+      margin: 0 0 12px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .export-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .export-row .field.grow { min-width: 220px; }
+    select#formatSelect {
+      font-family: inherit;
+      font-size: 0.95rem;
+      padding: 10px 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-sm);
+      background: #fff;
+      color: var(--ink);
+      width: 100%;
+      cursor: pointer;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    select#formatSelect:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    #downloadBtn { white-space: nowrap; }
+    .btn.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .btn.primary:hover { background: var(--accent-ink); border-color: var(--accent-ink); }
+
+    .meta {
+      margin-top: 12px;
+      font-size: 0.82rem;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .meta strong { color: var(--ink); font-weight: 600; }
+
+    .hint {
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin: 10px 2px 0;
+    }
+
+    footer.app-foot {
+      text-align: center;
+      margin-top: 28px;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    @media (max-width: 520px) {
+      body { padding: 20px 10px 48px; }
+      .panel-body { padding: 16px; }
+      header.app-head h1 { font-size: 1.4rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="app-head">
+      <h1>E-Signature Maker</h1>
+      <p>Draw or type your signature, then download it as PNG, JPG, or PDF.</p>
+    </header>
+
+    <div class="card">
+      <!-- Tabs -->
+      <div class="tabs" role="tablist">
+        <button class="tab active" id="tabDraw" role="tab" aria-selected="true">✍️ Draw</button>
+        <button class="tab" id="tabType" role="tab" aria-selected="false">⌨️ Type</button>
+      </div>
+
+      <div class="panel-body">
+        <!-- Signature stage (shared preview area) -->
+        <div class="stage transparent" id="stage">
+          <canvas id="drawCanvas"></canvas>
+          <!-- Live typed preview overlay -->
+          <div class="type-preview placeholder" id="typePreview" style="display:none;">
+            <span id="typePreviewText">Your name</span>
+          </div>
+        </div>
+
+        <!-- ========== DRAW MODE ========== -->
+        <section class="mode active" id="modeDraw">
+          <div class="controls">
+            <div class="row">
+              <div class="field">
+                <span class="lbl">Pen color</span>
+                <div class="swatches" id="drawSwatches">
+                  <button class="swatch active" data-color="#000000" style="background:#000000" title="Black"></button>
+                  <button class="swatch" data-color="#1d4ed8" style="background:#1d4ed8" title="Blue"></button>
+                  <button class="swatch" data-color="#dc2626" style="background:#dc2626" title="Red"></button>
+                </div>
+              </div>
+
+              <div class="field grow">
+                <span class="lbl">Pen thickness — <span class="slider-val" id="drawThickVal">3 px</span></span>
+                <input type="range" id="drawThick" min="1" max="12" step="1" value="3" />
+              </div>
+            </div>
+          </div>
+          <p class="hint">Use your mouse or finger to sign in the box above.</p>
+        </section>
+
+        <!-- ========== TYPE MODE ========== -->
+        <section class="mode" id="modeType">
+          <div class="controls">
+            <div class="row">
+              <div class="field grow">
+                <span class="lbl">Your name</span>
+                <input type="text" id="typeInput" placeholder="Type your name…" autocomplete="off" />
+              </div>
+            </div>
+
+            <div class="field">
+              <span class="lbl">Font style</span>
+              <div class="font-grid" id="fontGrid">
+                <button class="font-opt active" data-font="Caveat" style="font-family:'Caveat'">Signature<small>Caveat</small></button>
+                <button class="font-opt" data-font="Pacifico" style="font-family:'Pacifico'">Signature<small>Pacifico</small></button>
+                <button class="font-opt" data-font="Dancing Script" style="font-family:'Dancing Script'">Signature<small>Dancing Script</small></button>
+                <button class="font-opt" data-font="Great Vibes" style="font-family:'Great Vibes'">Signature<small>Great Vibes</small></button>
+                <button class="font-opt" data-font="Allura" style="font-family:'Allura'">Signature<small>Allura</small></button>
+              </div>
+            </div>
+
+            <div class="row">
+              <div class="field">
+                <span class="lbl">Text color</span>
+                <div class="swatches" id="typeSwatches">
+                  <button class="swatch active" data-color="#000000" style="background:#000000" title="Black"></button>
+                  <button class="swatch" data-color="#1d4ed8" style="background:#1d4ed8" title="Blue"></button>
+                  <button class="swatch" data-color="#dc2626" style="background:#dc2626" title="Red"></button>
+                </div>
+              </div>
+
+              <div class="field grow">
+                <span class="lbl">Font size — <span class="slider-val" id="typeSizeVal">64 px</span></span>
+                <input type="range" id="typeSize" min="24" max="110" step="2" value="64" />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========== SHARED CONTROLS ========== -->
+        <div class="controls" style="margin-top:18px;">
+          <div class="row">
+            <div class="field">
+              <span class="lbl">Background</span>
+              <div class="seg" id="bgToggle">
+                <button data-bg="transparent" class="active">Transparent</button>
+                <button data-bg="white">White</button>
+              </div>
+            </div>
+
+            <div class="field" style="margin-left:auto;">
+              <span class="lbl">&nbsp;</span>
+              <div class="actions">
+                <button class="btn ghost" id="undoBtn" disabled>↶ Undo</button>
+                <button class="btn" id="clearBtn">Clear</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========== EXPORT ========== -->
+        <div class="export">
+          <h3>Download signature</h3>
+          <div class="export-row">
+            <div class="field grow">
+              <label class="lbl" for="formatSelect">Format</label>
+              <select id="formatSelect">
+                <option value="png">PNG — transparent background supported</option>
+                <option value="jpg">JPG — white background</option>
+                <option value="pdf">PDF — centered on an A4 page</option>
+              </select>
+            </div>
+            <button class="btn primary" id="downloadBtn">⬇ Download</button>
+          </div>
+          <div class="meta" id="meta">Nothing to export yet — start signing above.</div>
+        </div>
+      </div>
+    </div>
+
+    <footer class="app-foot">
+      Runs entirely in your browser. Your signature never leaves this page.
+    </footer>
+  </div>
+
+  <script>
+  (function () {
+    "use strict";
+
+    /* =========================================================
+       Constants & State
+       ========================================================= */
+    const EXPORT_W = 600;   // fixed export resolution width
+    const EXPORT_H = 200;   // fixed export resolution height
+
+    const state = {
+      mode: "draw",                 // "draw" | "type"
+      bg: "transparent",            // "transparent" | "white"
+      // draw
+      penColor: "#000000",
+      penThick: 3,
+      strokes: [],                  // array of strokes; each stroke = array of {x,y} in canvas pixel space
+      // type
+      text: "",
+      font: "Caveat",
+      textColor: "#000000",
+      fontSize: 64,
+    };
+
+    /* =========================================================
+       Element refs
+       ========================================================= */
+    const el = {
+      stage: document.getElementById("stage"),
+      canvas: document.getElementById("drawCanvas"),
+      typePreview: document.getElementById("typePreview"),
+      typePreviewText: document.getElementById("typePreviewText"),
+
+      tabDraw: document.getElementById("tabDraw"),
+      tabType: document.getElementById("tabType"),
+      modeDraw: document.getElementById("modeDraw"),
+      modeType: document.getElementById("modeType"),
+
+      drawSwatches: document.getElementById("drawSwatches"),
+      drawThick: document.getElementById("drawThick"),
+      drawThickVal: document.getElementById("drawThickVal"),
+
+      typeInput: document.getElementById("typeInput"),
+      fontGrid: document.getElementById("fontGrid"),
+      typeSwatches: document.getElementById("typeSwatches"),
+      typeSize: document.getElementById("typeSize"),
+      typeSizeVal: document.getElementById("typeSizeVal"),
+
+      bgToggle: document.getElementById("bgToggle"),
+      undoBtn: document.getElementById("undoBtn"),
+      clearBtn: document.getElementById("clearBtn"),
+
+      formatSelect: document.getElementById("formatSelect"),
+      downloadBtn: document.getElementById("downloadBtn"),
+      meta: document.getElementById("meta"),
+    };
+
+    const ctx = el.canvas.getContext("2d");
+
+    /* =========================================================
+       Canvas sizing
+       The canvas is responsive (CSS sizes it to fill the stage),
+       but we back it with a fixed internal resolution so drawing
+       coordinates and exports stay consistent. We render at a
+       device-pixel-ratio-aware backing store for crisp lines,
+       while keeping a logical coordinate system of EXPORT_W x EXPORT_H.
+       ========================================================= */
+    let dpr = window.devicePixelRatio || 1;
+
+    function setupCanvas() {
+      dpr = window.devicePixelRatio || 1;
+      // Logical drawing space is always EXPORT_W x EXPORT_H.
+      // Backing store scaled by dpr for sharpness on the visible canvas.
+      el.canvas.width = EXPORT_W * dpr;
+      el.canvas.height = EXPORT_H * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // 1 unit = 1 logical px
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      redraw();
+    }
+
+    /* =========================================================
+       Drawing
+       ========================================================= */
+    function redraw() {
+      // Clear in device space
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, el.canvas.width, el.canvas.height);
+      ctx.restore();
+
+      // Re-apply logical transform
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      for (const stroke of state.strokes) {
+        drawStroke(stroke);
+      }
+    }
+
+    // Draw one stroke using quadratic curves between midpoints for smooth lines.
+    function drawStroke(stroke) {
+      if (!stroke.points.length) return;
+      ctx.strokeStyle = stroke.color;
+      ctx.lineWidth = stroke.thickness;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      const pts = stroke.points;
+
+      if (pts.length === 1) {
+        // A single tap → draw a dot
+        ctx.beginPath();
+        ctx.arc(pts[0].x, pts[0].y, stroke.thickness / 2, 0, Math.PI * 2);
+        ctx.fillStyle = stroke.color;
+        ctx.fill();
+        return;
+      }
+
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length - 1; i++) {
+        const midX = (pts[i].x + pts[i + 1].x) / 2;
+        const midY = (pts[i].y + pts[i + 1].y) / 2;
+        ctx.quadraticCurveTo(pts[i].x, pts[i].y, midX, midY);
+      }
+      // Final segment to the last point
+      const last = pts[pts.length - 1];
+      ctx.lineTo(last.x, last.y);
+      ctx.stroke();
+    }
+
+    // Convert a pointer event to logical canvas coordinates (EXPORT_W x EXPORT_H space)
+    function getPos(evt) {
+      const rect = el.canvas.getBoundingClientRect();
+      const source = evt.touches && evt.touches.length ? evt.touches[0] : evt;
+      const x = (source.clientX - rect.left) / rect.width * EXPORT_W;
+      const y = (source.clientY - rect.top) / rect.height * EXPORT_H;
+      return { x, y };
+    }
+
+    let drawing = false;
+    let current = null;
+
+    function startStroke(evt) {
+      if (state.mode !== "draw") return;
+      evt.preventDefault();
+      drawing = true;
+      current = {
+        color: state.penColor,
+        thickness: state.penThick,
+        points: [getPos(evt)],
+      };
+      state.strokes.push(current);
+      redraw();
+    }
+
+    function moveStroke(evt) {
+      if (!drawing || state.mode !== "draw") return;
+      evt.preventDefault();
+      current.points.push(getPos(evt));
+      redraw();
+    }
+
+    function endStroke(evt) {
+      if (!drawing) return;
+      if (evt) evt.preventDefault();
+      drawing = false;
+      current = null;
+      updateUndoState();
+      updateMeta();
+    }
+
+    // Mouse events
+    el.canvas.addEventListener("mousedown", startStroke);
+    window.addEventListener("mousemove", moveStroke);
+    window.addEventListener("mouseup", endStroke);
+
+    // Touch events
+    el.canvas.addEventListener("touchstart", startStroke, { passive: false });
+    el.canvas.addEventListener("touchmove", moveStroke, { passive: false });
+    el.canvas.addEventListener("touchend", endStroke, { passive: false });
+    el.canvas.addEventListener("touchcancel", endStroke, { passive: false });
+
+    /* =========================================================
+       Type mode live preview
+       ========================================================= */
+    function updateTypePreview() {
+      const text = state.text.trim();
+      const showPlaceholder = text.length === 0;
+      el.typePreviewText.textContent = showPlaceholder ? "Your name" : state.text;
+      el.typePreview.classList.toggle("placeholder", showPlaceholder);
+
+      // The preview stage is 3:1; scale the displayed font so it visually
+      // approximates the exported size relative to the 600x200 export box.
+      const stageW = el.stage.clientWidth;
+      const scale = stageW / EXPORT_W;
+      el.typePreviewText.style.fontFamily = "'" + state.font + "'";
+      el.typePreviewText.style.color = state.textColor;
+      el.typePreviewText.style.fontSize = (state.fontSize * scale) + "px";
+    }
+
+    /* =========================================================
+       Render typed text onto a canvas (for export parity)
+       Returns a canvas at EXPORT_W x EXPORT_H (logical) scaled by `scale`.
+       ========================================================= */
+    function renderTypedToCanvas(scale, withWhiteBg) {
+      const c = document.createElement("canvas");
+      c.width = EXPORT_W * scale;
+      c.height = EXPORT_H * scale;
+      const cx = c.getContext("2d");
+      cx.scale(scale, scale);
+
+      if (withWhiteBg) {
+        cx.fillStyle = "#ffffff";
+        cx.fillRect(0, 0, EXPORT_W, EXPORT_H);
+      }
+
+      const text = state.text.trim();
+      if (!text) return c;
+
+      // Fit the text within the box: shrink font size if it overflows width.
+      let size = state.fontSize;
+      cx.textAlign = "center";
+      cx.textBaseline = "middle";
+      cx.fillStyle = state.textColor;
+
+      const maxW = EXPORT_W - 32; // padding
+      do {
+        cx.font = size + "px '" + state.font + "'";
+        if (cx.measureText(text).width <= maxW || size <= 12) break;
+        size -= 2;
+      } while (size > 12);
+
+      cx.fillText(text, EXPORT_W / 2, EXPORT_H / 2 + size * 0.05);
+      return c;
+    }
+
+    /* =========================================================
+       Build the final export canvas (both modes), at given scale.
+       withWhiteBg overrides the transparent background (used for JPG).
+       ========================================================= */
+    function buildExportCanvas(scale, forceWhiteBg) {
+      const useWhite = forceWhiteBg || state.bg === "white";
+
+      if (state.mode === "type") {
+        return renderTypedToCanvas(scale, useWhite);
+      }
+
+      // Draw mode → render strokes onto a fresh canvas at the requested scale.
+      const c = document.createElement("canvas");
+      c.width = EXPORT_W * scale;
+      c.height = EXPORT_H * scale;
+      const cx = c.getContext("2d");
+      cx.scale(scale, scale);
+
+      if (useWhite) {
+        cx.fillStyle = "#ffffff";
+        cx.fillRect(0, 0, EXPORT_W, EXPORT_H);
+      }
+
+      cx.lineCap = "round";
+      cx.lineJoin = "round";
+      for (const stroke of state.strokes) {
+        const pts = stroke.points;
+        if (!pts.length) continue;
+        cx.strokeStyle = stroke.color;
+        cx.fillStyle = stroke.color;
+        cx.lineWidth = stroke.thickness;
+
+        if (pts.length === 1) {
+          cx.beginPath();
+          cx.arc(pts[0].x, pts[0].y, stroke.thickness / 2, 0, Math.PI * 2);
+          cx.fill();
+          continue;
+        }
+        cx.beginPath();
+        cx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length - 1; i++) {
+          const midX = (pts[i].x + pts[i + 1].x) / 2;
+          const midY = (pts[i].y + pts[i + 1].y) / 2;
+          cx.quadraticCurveTo(pts[i].x, pts[i].y, midX, midY);
+        }
+        const last = pts[pts.length - 1];
+        cx.lineTo(last.x, last.y);
+        cx.stroke();
+      }
+      return c;
+    }
+
+    /* =========================================================
+       Helpers
+       ========================================================= */
+    function hasContent() {
+      if (state.mode === "draw") return state.strokes.length > 0;
+      return state.text.trim().length > 0;
+    }
+
+    function updateUndoState() {
+      el.undoBtn.disabled = !(state.mode === "draw" && state.strokes.length > 0);
+    }
+
+    function formatBytes(bytes) {
+      if (bytes < 1024) return bytes + " B";
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+      return (bytes / (1024 * 1024)).toFixed(2) + " MB";
+    }
+
+    // Update the metadata line (dimensions + approx file size for PNG)
+    function updateMeta() {
+      if (!hasContent()) {
+        el.meta.textContent = "Nothing to export yet — start signing above.";
+        setExportEnabled(false);
+        return;
+      }
+      setExportEnabled(true);
+
+      // 2x export resolution for crisp output
+      const out = buildExportCanvas(2, false);
+      out.toBlob(function (blob) {
+        const size = blob ? formatBytes(blob.size) : "—";
+        el.meta.innerHTML =
+          "Export size: <strong>" + out.width + " × " + out.height + " px</strong>" +
+          " · PNG ≈ <strong>" + size + "</strong>";
+      }, "image/png");
+    }
+
+    function setExportEnabled(on) {
+      el.downloadBtn.disabled = !on;
+    }
+
+    function triggerDownload(href, filename) {
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    /* =========================================================
+       Export actions
+       ========================================================= */
+    function exportPng() {
+      if (!hasContent()) return;
+      // PNG supports transparency → respect the chosen background.
+      const out = buildExportCanvas(2, false);
+      out.toBlob(function (blob) {
+        const url = URL.createObjectURL(blob);
+        triggerDownload(url, "signature.png");
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }, "image/png");
+    }
+
+    function exportJpg() {
+      if (!hasContent()) return;
+      // JPEG has no transparency → always force a white background.
+      const out = buildExportCanvas(2, true);
+      out.toBlob(function (blob) {
+        const url = URL.createObjectURL(blob);
+        triggerDownload(url, "signature.jpg");
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }, "image/jpeg", 0.95);
+    }
+
+    function exportPdf() {
+      if (!hasContent()) return;
+      if (!window.jspdf || !window.jspdf.jsPDF) {
+        alert("PDF library failed to load. Check your internet connection and try again.");
+        return;
+      }
+      const { jsPDF } = window.jspdf;
+
+      // For PDF: if transparent chosen, PDF page is white anyway, so we
+      // render a PNG (transparent) and let the white page show through.
+      const img = buildExportCanvas(3, false).toDataURL("image/png");
+
+      // A4 portrait, units in mm
+      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const pageW = pdf.internal.pageSize.getWidth();   // 210mm
+      const pageH = pdf.internal.pageSize.getHeight();  // 297mm
+
+      // Target signature width ~ 60% of page width, keep 3:1 aspect ratio.
+      const imgW = pageW * 0.6;
+      const imgH = imgW * (EXPORT_H / EXPORT_W);
+      const x = (pageW - imgW) / 2;
+      const y = (pageH - imgH) / 2;
+
+      pdf.addImage(img, "PNG", x, y, imgW, imgH);
+      pdf.save("signature.pdf");
+    }
+
+    /* =========================================================
+       UI wiring
+       ========================================================= */
+    // Tabs
+    function setMode(mode) {
+      state.mode = mode;
+      const isDraw = mode === "draw";
+      el.tabDraw.classList.toggle("active", isDraw);
+      el.tabType.classList.toggle("active", !isDraw);
+      el.tabDraw.setAttribute("aria-selected", isDraw);
+      el.tabType.setAttribute("aria-selected", !isDraw);
+      el.modeDraw.classList.toggle("active", isDraw);
+      el.modeType.classList.toggle("active", !isDraw);
+
+      // Toggle preview layers
+      el.canvas.style.display = isDraw ? "block" : "none";
+      el.typePreview.style.display = isDraw ? "none" : "flex";
+
+      updateUndoState();
+      updateMeta();
+      if (!isDraw) updateTypePreview();
+    }
+    el.tabDraw.addEventListener("click", () => setMode("draw"));
+    el.tabType.addEventListener("click", () => setMode("type"));
+
+    // Draw: pen color swatches
+    el.drawSwatches.addEventListener("click", (e) => {
+      const btn = e.target.closest(".swatch");
+      if (!btn) return;
+      state.penColor = btn.dataset.color;
+      [...el.drawSwatches.children].forEach((s) => s.classList.toggle("active", s === btn));
+    });
+
+    // Draw: thickness
+    el.drawThick.addEventListener("input", () => {
+      state.penThick = parseInt(el.drawThick.value, 10);
+      el.drawThickVal.textContent = state.penThick + " px";
+    });
+
+    // Type: text input
+    el.typeInput.addEventListener("input", () => {
+      state.text = el.typeInput.value;
+      updateTypePreview();
+      updateMeta();
+    });
+
+    // Type: font choice
+    el.fontGrid.addEventListener("click", (e) => {
+      const btn = e.target.closest(".font-opt");
+      if (!btn) return;
+      state.font = btn.dataset.font;
+      [...el.fontGrid.children].forEach((f) => f.classList.toggle("active", f === btn));
+      updateTypePreview();
+      updateMeta();
+    });
+
+    // Type: text color
+    el.typeSwatches.addEventListener("click", (e) => {
+      const btn = e.target.closest(".swatch");
+      if (!btn) return;
+      state.textColor = btn.dataset.color;
+      [...el.typeSwatches.children].forEach((s) => s.classList.toggle("active", s === btn));
+      updateTypePreview();
+      updateMeta();
+    });
+
+    // Type: font size
+    el.typeSize.addEventListener("input", () => {
+      state.fontSize = parseInt(el.typeSize.value, 10);
+      el.typeSizeVal.textContent = state.fontSize + " px";
+      updateTypePreview();
+      updateMeta();
+    });
+
+    // Background toggle
+    el.bgToggle.addEventListener("click", (e) => {
+      const btn = e.target.closest("button");
+      if (!btn) return;
+      state.bg = btn.dataset.bg;
+      [...el.bgToggle.children].forEach((b) => b.classList.toggle("active", b === btn));
+      el.stage.classList.toggle("transparent", state.bg === "transparent");
+      el.stage.classList.toggle("white", state.bg === "white");
+      updateMeta();
+    });
+
+    // Undo (draw mode)
+    el.undoBtn.addEventListener("click", () => {
+      if (state.strokes.length) {
+        state.strokes.pop();
+        redraw();
+        updateUndoState();
+        updateMeta();
+      }
+    });
+
+    // Clear (both modes)
+    el.clearBtn.addEventListener("click", () => {
+      if (state.mode === "draw") {
+        state.strokes = [];
+        redraw();
+        updateUndoState();
+      } else {
+        state.text = "";
+        el.typeInput.value = "";
+        updateTypePreview();
+      }
+      updateMeta();
+    });
+
+    // Export: download the selected format
+    function downloadSelected() {
+      if (!hasContent()) return;
+      switch (el.formatSelect.value) {
+        case "jpg": exportJpg(); break;
+        case "pdf": exportPdf(); break;
+        case "png":
+        default: exportPng(); break;
+      }
+    }
+    el.downloadBtn.addEventListener("click", downloadSelected);
+
+    /* =========================================================
+       Init
+       ========================================================= */
+    // Re-fit canvas backing store on resize (keeps strokes via redraw()).
+    let resizeTimer = null;
+    window.addEventListener("resize", () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        setupCanvas();
+        if (state.mode === "type") updateTypePreview();
+      }, 120);
+    });
+
+    // Make sure fonts are loaded before first preview/measure where possible.
+    function init() {
+      setupCanvas();
+      setMode("draw");
+      updateMeta();
+    }
+
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => {
+        // Re-render the typed preview once custom fonts are available.
+        if (state.mode === "type") updateTypePreview();
+        updateMeta();
+      });
+    }
+
+    init();
+  })();
+  </script>
+</body>
+</html>
