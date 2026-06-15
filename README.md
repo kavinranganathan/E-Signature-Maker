@@ -51,3 +51,12 @@ vercel --prod          # production deployment
 ```
 
 External resources are loaded from CDNs at runtime: Google Fonts (handwriting fonts) and [jsPDF](https://github.com/parallax/jsPDF) (PDF export). An internet connection is required for typed fonts and PDF export.
+
+## Analytics
+
+[Vercel Web Analytics](https://vercel.com/docs/analytics) is wired in via the static-site script snippet at the bottom of `index.html` (this is a vanilla HTML app, so the `@vercel/analytics` React component / `npm install` is not used). To start collecting page views:
+
+1. Deploy the project to Vercel.
+2. In the Vercel dashboard, open the project → **Analytics** tab → **Enable**.
+
+Vercel then serves `/_vercel/insights/script.js` automatically and data appears in that tab. The script is a no-op when running locally or on non-Vercel hosts, so it's safe to leave in.

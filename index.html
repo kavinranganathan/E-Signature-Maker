@@ -1083,5 +1083,14 @@
     init();
   })();
   </script>
+
+  <!-- Vercel Web Analytics (static-site snippet).
+       Vercel serves /_vercel/insights/script.js automatically once Analytics
+       is enabled for the project. No npm install / build step needed for a
+       vanilla HTML app. https://vercel.com/docs/analytics -->
+  <script>
+    window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+  </script>
+  <script defer src="/_vercel/insights/script.js"></script>
 </body>
 </html>
